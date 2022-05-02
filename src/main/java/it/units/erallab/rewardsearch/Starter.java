@@ -16,7 +16,7 @@
 
 package it.units.erallab.rewardsearch;
 
-import com.google.common.collect.Lists;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import it.units.erallab.builder.PrototypedFunctionBuilder;
 import it.units.erallab.builder.function.NeuralReward;
 import it.units.erallab.builder.solver.SimpleES;
@@ -25,6 +25,7 @@ import it.units.erallab.hmsrobots.core.controllers.StepController;
 import it.units.erallab.hmsrobots.core.controllers.rl.ClusteredControlFunction;
 import it.units.erallab.hmsrobots.core.controllers.rl.ClusteredObservationFunction;
 import it.units.erallab.hmsrobots.core.controllers.rl.RLController;
+import it.units.erallab.hmsrobots.core.controllers.rl.RewardFunction;
 import it.units.erallab.hmsrobots.core.controllers.rl.continuous.ContinuousRL;
 import it.units.erallab.hmsrobots.core.controllers.rl.discrete.DiscreteRL;
 import it.units.erallab.hmsrobots.core.controllers.rl.discrete.TabularSARSALambda;
@@ -32,12 +33,9 @@ import it.units.erallab.hmsrobots.core.controllers.rl.discrete.converters.Binary
 import it.units.erallab.hmsrobots.core.controllers.rl.discrete.converters.BinaryOutputConverter;
 import it.units.erallab.hmsrobots.core.objects.Robot;
 import it.units.erallab.hmsrobots.core.objects.Voxel;
-import it.units.erallab.hmsrobots.tasks.locomotion.Outcome;
-import it.units.erallab.hmsrobots.tasks.rllocomotion.RLLocomotion;
 import it.units.erallab.hmsrobots.tasks.rllocomotion.RLEnsembleOutcome;
-import it.units.erallab.hmsrobots.util.Grid;
-import it.units.erallab.hmsrobots.util.RobotUtils;
-import it.units.erallab.hmsrobots.util.SerializationUtils;
+import it.units.erallab.hmsrobots.tasks.rllocomotion.RLLocomotion;
+import it.units.erallab.hmsrobots.util.*;
 import it.units.malelab.jgea.Worker;
 import it.units.malelab.jgea.core.TotalOrderQualityBasedProblem;
 import it.units.malelab.jgea.core.listener.*;
@@ -54,22 +52,19 @@ import org.dyn4j.dynamics.Settings;
 import java.io.File;
 import java.util.*;
 import java.util.function.Function;
-import java.util.function.ToDoubleFunction;
 import java.util.random.RandomGenerator;
 
 import static it.units.erallab.hmsrobots.behavior.PoseUtils.computeCardinalPoses;
 import static it.units.erallab.rewardsearch.NamedFunctions.*;
-import static it.units.malelab.jgea.core.listener.NamedFunctions.f;
 import static it.units.malelab.jgea.core.listener.NamedFunctions.fitness;
 import static it.units.malelab.jgea.core.util.Args.*;
-import static it.units.malelab.jgea.core.util.Args.l;
 
 /**
  * @author eric
  */
 public class Starter extends Worker {
     public final static Settings PHYSICS_SETTINGS = new Settings();
-    public final static double MAX_LEARNING_TIME = 100d;
+    public final static double MAX_LEARNING_TIME = 10d;
     public final static double MAX_EPISODE_TIME = 50d;
     public final static int N_AGENTS = 5;
 
@@ -77,12 +72,19 @@ public class Starter extends Worker {
         super(args);
     }
 
-    public record Problem(Function<ToDoubleFunction<Grid<Voxel>>, RLEnsembleOutcome> qualityFunction,
-                          Comparator<RLEnsembleOutcome> totalOrderComparator) implements TotalOrderQualityBasedProblem<ToDoubleFunction<Grid<Voxel>>, RLEnsembleOutcome> {
+    public record Problem(Function<SerializableFunction<double[], Double>, RLEnsembleOutcome> qualityFunction,
+                          Comparator<RLEnsembleOutcome> totalOrderComparator) implements TotalOrderQualityBasedProblem<SerializableFunction<double[], Double>, RLEnsembleOutcome> {
     }
 
-    public static Function<ToDoubleFunction<Grid<Voxel>>, RLEnsembleOutcome> buildLocomotionTask(Robot robot) {
-        return r -> new RLLocomotion(MAX_LEARNING_TIME, MAX_EPISODE_TIME, N_AGENTS, robot).apply(r);
+    public static Function<SerializableFunction<double[], Double>, RLEnsembleOutcome> buildLocomotionTask(Robot robot, SerializableBiFunction<Double, Grid<Voxel>, double[]> transformation) {
+        return r -> new RLLocomotion(MAX_LEARNING_TIME, MAX_EPISODE_TIME, N_AGENTS, robot).apply(new RewardFunction() {
+            @JsonProperty
+            private SerializableBiFunction<Double, Grid<Voxel>, double[]> sensorExtractor = transformation;
+            @Override
+            public Double apply(Grid<Voxel> entries) {
+                return r.apply(sensorExtractor.apply(0d, entries));
+            }
+        });
     }
 
     public static void main(String[] args) {
@@ -122,34 +124,33 @@ public class Starter extends Worker {
         String finalFileName = a("finalFile", "final");
         String validationFileName = a("validationFile", null);
         boolean deferred = a("deferred", "true").startsWith("t");
-        String telegramBotId = a("telegramBotId", null);
-        long telegramChatId = Long.parseLong(a("telegramChatId", "0"));
-        List<String> serializationFlags = l(a("serialization", "all")); //last,best,all,final
+        String telegramBotId = a("telegramBotId", "5277744567:AAHnMwkTe67sVvz9aP7S0JKNGJip-ZBVPgs");
+        long telegramChatId = Long.parseLong(a("telegramChatId", "1882376186"));
+        List<String> serializationFlags = l(a("serialization", "last,final")); //last,best,all,final
         boolean output = a("output", "false").startsWith("t");
         boolean detailedOutput = a("detailedOutput", "false").startsWith("t");
         boolean cacheOutcome = a("cache", "false").startsWith("t");
 
 
-
         Function<RLEnsembleOutcome, Double> fitnessFunction = s -> s.results().stream().map(RLEnsembleOutcome.RLOutcome::validationVelocity).mapToDouble(v -> v).average().orElse(0d);
 
 
-        List<NamedFunction<? super POSetPopulationState<?, ToDoubleFunction<Grid<Voxel>>, RLEnsembleOutcome>, ?>> basicFunctions = basicFunctions();
-        List<NamedFunction<? super Individual<?, ToDoubleFunction<Grid<Voxel>>, RLEnsembleOutcome>, ?>> basicIndividualFunctions =
+        List<NamedFunction<? super POSetPopulationState<?, SerializableFunction<double[], Double>, RLEnsembleOutcome>, ?>> basicFunctions = basicFunctions();
+        List<NamedFunction<? super Individual<?, SerializableFunction<double[], Double>, RLEnsembleOutcome>, ?>> basicIndividualFunctions =
                 individualFunctions(
                         fitnessFunction);
-        List<NamedFunction<? super POSetPopulationState<?, ToDoubleFunction<Grid<Voxel>>, RLEnsembleOutcome>, ?>> populationFunctions =
+        List<NamedFunction<? super POSetPopulationState<?, SerializableFunction<double[], Double>, RLEnsembleOutcome>, ?>> populationFunctions =
                 populationFunctions(
                         fitnessFunction);
 
         List<NamedFunction<? super RLEnsembleOutcome, ?>> basicOutcomeFunctions = basicOutcomeFunctions();
 
-        List<ListenerFactory<? super POSetPopulationState<?, ToDoubleFunction<Grid<Voxel>>, RLEnsembleOutcome>, Map<String, Object>>> factories =
+        List<ListenerFactory<? super POSetPopulationState<?, SerializableFunction<double[], Double>, RLEnsembleOutcome>, Map<String, Object>>> factories =
                 new ArrayList<>();
         ProgressMonitor progressMonitor = new ScreenProgressMonitor(System.out);
         //screen listener
         if (bestFileName == null || output) {
-            factories.add(new TabularPrinter<POSetPopulationState<?, ToDoubleFunction<Grid<Voxel>>, RLEnsembleOutcome>, Map<String, Object>>(Misc.concat(List.of(
+            factories.add(new TabularPrinter<POSetPopulationState<?, SerializableFunction<double[], Double>, RLEnsembleOutcome>, Map<String, Object>>(Misc.concat(List.of(
                     basicFunctions,
                     populationFunctions,
                     best().then(basicIndividualFunctions)
@@ -175,7 +176,7 @@ public class Starter extends Worker {
             )), keysFunctions(), new File(bestFileName)));
         }
         if (allFileName != null) {
-            List<NamedFunction<? super Pair<POSetPopulationState<?, ToDoubleFunction<Grid<Voxel>>, RLEnsembleOutcome>, Individual<?, ToDoubleFunction<Grid<Voxel>>, RLEnsembleOutcome>>, ?>> functions = new ArrayList<>();
+            List<NamedFunction<? super Pair<POSetPopulationState<?, SerializableFunction<double[], Double>, RLEnsembleOutcome>, Individual<?, SerializableFunction<double[], Double>, RLEnsembleOutcome>>, ?>> functions = new ArrayList<>();
             functions.addAll(stateExtractor().then(basicFunctions));
             functions.addAll(individualExtractor().then(basicIndividualFunctions));
             functions.addAll(individualExtractor()
@@ -187,7 +188,7 @@ public class Starter extends Worker {
             ).forEach(populationSplitter()));
         }
         if (finalFileName != null) {
-            List<NamedFunction<? super Pair<POSetPopulationState<?, ToDoubleFunction<Grid<Voxel>>, RLEnsembleOutcome>, Individual<?, ToDoubleFunction<Grid<Voxel>>, RLEnsembleOutcome>>, ?>> functions = new ArrayList<>();
+            List<NamedFunction<? super Pair<POSetPopulationState<?, SerializableFunction<double[], Double>, RLEnsembleOutcome>, Individual<?, SerializableFunction<double[], Double>, RLEnsembleOutcome>>, ?>> functions = new ArrayList<>();
             functions.addAll(stateExtractor().then(basicFunctions));
             functions.addAll(individualExtractor().then(basicIndividualFunctions));
             functions.addAll(individualExtractor()
@@ -205,14 +206,13 @@ public class Starter extends Worker {
             ), telegramBotId, telegramChatId));
             progressMonitor = progressMonitor.and(new TelegramProgressMonitor(telegramBotId, telegramChatId));
         }
-        ListenerFactory<? super POSetPopulationState<?, ToDoubleFunction<Grid<Voxel>>, RLEnsembleOutcome>, Map<String, Object>> factory = ListenerFactory.all(
+        ListenerFactory<? super POSetPopulationState<?, SerializableFunction<double[], Double>, RLEnsembleOutcome>, Map<String, Object>> factory = ListenerFactory.all(
                 factories);
 
 
         //summarize params
         L.info("Shapes: " + shape);
         L.info("Sensor configs: " + sensorConfig);
-
 
         Map<String, Object> keys = Map.ofEntries(
                 Map.entry("experiment.name", experimentName),
@@ -224,7 +224,7 @@ public class Starter extends Worker {
                 Map.entry("episode.transient.time", episodeTransientTime)
         );
 
-        Listener<? super POSetPopulationState<?, ToDoubleFunction<Grid<Voxel>>, RLEnsembleOutcome>> listener = factory.build(keys);
+        Listener<? super POSetPopulationState<?, SerializableFunction<double[], Double>, RLEnsembleOutcome>> listener = factory.build(keys);
 
 
         // Create the body and the clusters
@@ -267,16 +267,17 @@ public class Starter extends Worker {
 
         Map<String, String> params = new HashMap<>();
         params.put("nPop", "12");
-        params.put("nEval", "1000");
-        NeuralReward neuralReward = new NeuralReward(MultiLayerPerceptron.ActivationFunction.TANH, s -> sensorExtractor.apply(0d, s), sensorExtractor.getOutputDimension());
-        PrototypedFunctionBuilder<List<Double>, ToDoubleFunction<Grid<Voxel>>> protFunBuilder = neuralReward.build(params);
+        params.put("nEval", "30");
+        NeuralReward neuralReward = new NeuralReward(MultiLayerPerceptron.ActivationFunction.TANH, sensorExtractor, sensorExtractor.getOutputDimension());
+        PrototypedFunctionBuilder<List<Double>, SerializableFunction<double[], Double>> protFunBuilder = neuralReward.build(params);
 
-        IterativeSolver<? extends POSetPopulationState<?, ToDoubleFunction<Grid<Voxel>>, RLEnsembleOutcome>, TotalOrderQualityBasedProblem<ToDoubleFunction<Grid<Voxel>>, RLEnsembleOutcome>, ToDoubleFunction<Grid<Voxel>>> solver = new SimpleES(0.35, 0.4).build(params).build(protFunBuilder, null);
+        IterativeSolver<? extends POSetPopulationState<?, SerializableFunction<double[], Double>, RLEnsembleOutcome>, TotalOrderQualityBasedProblem<SerializableFunction<double[], Double>, RLEnsembleOutcome>, SerializableFunction<double[], Double>> solver = new SimpleES(0.35, 0.4).build(params).build(protFunBuilder, null);
 
-        Problem problem = new Problem(buildLocomotionTask(robot), Comparator.comparing(fitnessFunction).reversed());
+        Problem problem = new Problem(buildLocomotionTask(robot, sensorExtractor), Comparator.comparing(fitnessFunction).reversed());
 
         try {
-            Collection<ToDoubleFunction<Grid<Voxel>>> solutions = solver.solve(problem, random, executorService, listener);
+            Collection<SerializableFunction<double[], Double>> solutions = solver.solve(problem, random, executorService, listener);
+            progressMonitor.notify((float) 1, "Done");
         } catch (SolverException e) {
             throw new RuntimeException(e);
         }
