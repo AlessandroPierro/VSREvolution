@@ -4,25 +4,29 @@ import it.units.erallab.builder.NamedProvider;
 import it.units.erallab.builder.PrototypedFunctionBuilder;
 import it.units.erallab.hmsrobots.core.controllers.MultiLayerPerceptron;
 import it.units.erallab.hmsrobots.core.controllers.TimedRealFunction;
+import it.units.erallab.hmsrobots.core.controllers.rl.ClusteredObservationFunction;
+import it.units.erallab.hmsrobots.core.objects.Voxel;
+import it.units.erallab.hmsrobots.util.Grid;
 
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.function.ToDoubleFunction;
 
 /**
  * @author eric
  */
-public class MLP implements NamedProvider<PrototypedFunctionBuilder<List<Double>, TimedRealFunction>> {
+public class NeuralReward implements NamedProvider<PrototypedFunctionBuilder<List<Double>, ToDoubleFunction<Grid<Voxel>>>> {
 
   protected final MultiLayerPerceptron.ActivationFunction activationFunction;
+  protected final Function<Grid<Voxel>, double[]> sensorsExtractor;
+  protected final int inputDimension;
 
-  public MLP() {
-    this(MultiLayerPerceptron.ActivationFunction.TANH);
-  }
-
-  public MLP(MultiLayerPerceptron.ActivationFunction activationFunction) {
+  public NeuralReward(MultiLayerPerceptron.ActivationFunction activationFunction, Function<Grid<Voxel>, double[]> sensorsExtractor, int inputDimension) {
     this.activationFunction = activationFunction;
+    this.sensorsExtractor = sensorsExtractor;
+    this.inputDimension = inputDimension;
   }
 
   protected static int[] innerNeurons(int nOfInputs, int nOfOutputs, double innerLayerRatio, int nOfInnerLayers) {
@@ -42,18 +46,16 @@ public class MLP implements NamedProvider<PrototypedFunctionBuilder<List<Double>
   }
 
   @Override
-  public PrototypedFunctionBuilder<List<Double>, TimedRealFunction> build(Map<String, String> params) {
-    // TODO : check params for network structure
+  public PrototypedFunctionBuilder<List<Double>, ToDoubleFunction<Grid<Voxel>>> build(Map<String, String> params) {
     double innerLayerRatio = Double.parseDouble(params.getOrDefault("r", "0.65"));
     int nOfInnerLayers = Integer.parseInt(params.getOrDefault("nIL", "1"));
     return new PrototypedFunctionBuilder<>() {
       @Override
-      public Function<List<Double>, TimedRealFunction> buildFor(TimedRealFunction function) {
+      public Function<List<Double>, ToDoubleFunction<Grid<Voxel>>> buildFor(ToDoubleFunction<Grid<Voxel>> function) {
         return values -> {
-          int nOfInputs = function.getInputDimension();
-          int nOfOutputs = function.getOutputDimension();
-          int[] innerNeurons = innerNeurons(nOfInputs, nOfOutputs, innerLayerRatio, nOfInnerLayers);
-          int nOfWeights = MultiLayerPerceptron.countWeights(nOfInputs, innerNeurons, nOfOutputs);
+          int nOfInputs = inputDimension;
+          int[] innerNeurons = innerNeurons(nOfInputs, 1, innerLayerRatio, nOfInnerLayers);
+          int nOfWeights = MultiLayerPerceptron.countWeights(nOfInputs, innerNeurons, 1);
           if (nOfWeights != values.size()) {
             throw new IllegalArgumentException(String.format(
                 "Wrong number of values for weights: %d expected, %d found",
@@ -61,29 +63,32 @@ public class MLP implements NamedProvider<PrototypedFunctionBuilder<List<Double>
                 values.size()
             ));
           }
-          return new MultiLayerPerceptron(
-              activationFunction,
-              nOfInputs,
-              innerNeurons,
-              nOfOutputs,
-              values.stream().mapToDouble(d -> d).toArray()
-          );
+          return s -> {
+            MultiLayerPerceptron mlp = new MultiLayerPerceptron(
+                    activationFunction,
+                    nOfInputs,
+                    innerNeurons,
+                    1,
+                    values.stream().mapToDouble(d -> d).toArray()
+            );
+            return mlp.apply(sensorsExtractor.apply(s))[0];
+          };
         };
       }
 
       @Override
-      public List<Double> exampleFor(TimedRealFunction function) {
+      public List<Double> exampleFor(ToDoubleFunction<Grid<Voxel>> function) {
         return Collections.nCopies(
             MultiLayerPerceptron.countWeights(
                 MultiLayerPerceptron.countNeurons(
-                    function.getInputDimension(),
+                    inputDimension,
                     innerNeurons(
-                        function.getInputDimension(),
-                        function.getOutputDimension(),
+                        inputDimension,
+                        1,
                         innerLayerRatio,
                         nOfInnerLayers
                     ),
-                    function.getOutputDimension()
+                    1
                 )
             ),
             0d
