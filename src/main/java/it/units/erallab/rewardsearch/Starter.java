@@ -48,6 +48,7 @@ import it.units.malelab.jgea.core.solver.state.POSetPopulationState;
 import it.units.malelab.jgea.core.util.Misc;
 import it.units.malelab.jgea.core.util.Pair;
 import org.dyn4j.dynamics.Settings;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.util.*;
@@ -80,6 +81,7 @@ public class Starter extends Worker {
         return r -> new RLLocomotion(MAX_LEARNING_TIME, MAX_EPISODE_TIME, N_AGENTS, robot).apply(new RewardFunction() {
             @JsonProperty
             private SerializableBiFunction<Double, Grid<Voxel>, double[]> sensorExtractor = transformation;
+
             @Override
             public Double apply(Grid<Voxel> entries) {
                 return r.apply(sensorExtractor.apply(0d, entries));
@@ -106,34 +108,19 @@ public class Starter extends Worker {
         double controllerStep = 0.5;
         int nClusters = 4;
 
-
         double episodeTime = d(a("episodeTime", "10"));
         double episodeTransientTime = d(a("episodeTransientTime", "1"));
-        double validationEpisodeTime = d(a("validationEpisodeTime", Double.toString(episodeTime)));
-        double validationTransientTime = d(a("validationTransientTime", Double.toString(episodeTransientTime)));
-        double videoEpisodeTime = d(a("videoEpisodeTime", "10"));
-        double videoEpisodeTransientTime = d(a("videoEpisodeTransientTime", "0"));
-        int[] seeds = ri(a("seed", "0:1"));
         String experimentName = a("expName", "short");
-        List<String> terrainNames = l(a("terrain", "flat"));//"hilly-1-10-rnd"));
-        List<String> targetShapeNames = l(a("shape", "biped-4x3"));
-        List<String> targetSensorConfigNames = l(a("sensorConfig", "uniform-a-0.01"));
         String lastFileName = a("lastFile", "last");
         String bestFileName = a("bestFile", "best");
         String allFileName = a("allFile", null);
         String finalFileName = a("finalFile", "final");
-        String validationFileName = a("validationFile", null);
-        boolean deferred = a("deferred", "true").startsWith("t");
         String telegramBotId = a("telegramBotId", "5277744567:AAHnMwkTe67sVvz9aP7S0JKNGJip-ZBVPgs");
         long telegramChatId = Long.parseLong(a("telegramChatId", "1882376186"));
         List<String> serializationFlags = l(a("serialization", "last,final")); //last,best,all,final
         boolean output = a("output", "false").startsWith("t");
-        boolean detailedOutput = a("detailedOutput", "false").startsWith("t");
-        boolean cacheOutcome = a("cache", "false").startsWith("t");
-
 
         Function<RLEnsembleOutcome, Double> fitnessFunction = s -> s.results().stream().map(RLEnsembleOutcome.RLOutcome::validationVelocity).mapToDouble(v -> v).average().orElse(0d);
-
 
         List<NamedFunction<? super POSetPopulationState<?, SerializableFunction<double[], Double>, RLEnsembleOutcome>, ?>> basicFunctions = basicFunctions();
         List<NamedFunction<? super Individual<?, SerializableFunction<double[], Double>, RLEnsembleOutcome>, ?>> basicIndividualFunctions =
@@ -209,7 +196,6 @@ public class Starter extends Worker {
         ListenerFactory<? super POSetPopulationState<?, SerializableFunction<double[], Double>, RLEnsembleOutcome>, Map<String, Object>> factory = ListenerFactory.all(
                 factories);
 
-
         //summarize params
         L.info("Shapes: " + shape);
         L.info("Sensor configs: " + sensorConfig);
@@ -226,7 +212,6 @@ public class Starter extends Worker {
 
         Listener<? super POSetPopulationState<?, SerializableFunction<double[], Double>, RLEnsembleOutcome>> listener = factory.build(keys);
 
-
         // Create the body and the clusters
         Grid<Voxel> body = RobotUtils.buildSensorizingFunction(sensorConfig).apply(RobotUtils.buildShape(shape));
         Set<Set<Grid.Key>> clustersSet = computeCardinalPoses(Grid.create(body, Objects::nonNull));
@@ -235,6 +220,7 @@ public class Starter extends Worker {
         ClusteredObservationFunction sensorExtractor = new ClusteredObservationFunction(clusters, areaReward, touchReward, rotationReward);
         ClusteredObservationFunction observationFunction = new ClusteredObservationFunction(clusters, areaAgent, touchAgent, rotationAgent);
         ClusteredControlFunction controlFunction = new ClusteredControlFunction(clusters);
+
         // Compute dimensions
         int sensorReadingsDimension = observationFunction.getOutputDimension();
         int actionSpaceDimension = (int) Math.pow(2, nClusters);
@@ -266,12 +252,35 @@ public class Starter extends Worker {
         Robot robot = new Robot(stepController, SerializationUtils.clone(body));
 
         Map<String, String> params = new HashMap<>();
-        params.put("nPop", "12");
-        params.put("nEval", "30");
+        params.put("nPop", "4");
+        params.put("nEval", "12");
         NeuralReward neuralReward = new NeuralReward(MultiLayerPerceptron.ActivationFunction.TANH, sensorExtractor, sensorExtractor.getOutputDimension());
         PrototypedFunctionBuilder<List<Double>, SerializableFunction<double[], Double>> protFunBuilder = neuralReward.build(params);
 
-        IterativeSolver<? extends POSetPopulationState<?, SerializableFunction<double[], Double>, RLEnsembleOutcome>, TotalOrderQualityBasedProblem<SerializableFunction<double[], Double>, RLEnsembleOutcome>, SerializableFunction<double[], Double>> solver = new SimpleES(0.35, 0.4).build(params).build(protFunBuilder, null);
+        SerializableFunction<double[], Double> targetFun = new SerializableFunction<>() {
+
+            @Override
+            public Double apply(double[] doubles) {
+                return 0d;
+            }
+
+            @NotNull
+            @Override
+            public <V> Function<V, Double> compose(@NotNull Function<? super V, ? extends double[]> before) {
+                return SerializableFunction.super.compose(before);
+            }
+
+            @NotNull
+            @Override
+            public <V> Function<double[], V> andThen(@NotNull Function<? super Double, ? extends V> after) {
+                return SerializableFunction.super.andThen(after);
+            }
+        };
+
+        IterativeSolver<? extends POSetPopulationState<?, SerializableFunction<double[], Double>, RLEnsembleOutcome>,
+                TotalOrderQualityBasedProblem<SerializableFunction<double[], Double>, RLEnsembleOutcome>,
+                SerializableFunction<double[], Double>> solver =
+                new SimpleES(0.35, 0.4).build(params).build(protFunBuilder, targetFun);
 
         Problem problem = new Problem(buildLocomotionTask(robot, sensorExtractor), Comparator.comparing(fitnessFunction).reversed());
 

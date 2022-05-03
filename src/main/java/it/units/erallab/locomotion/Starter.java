@@ -153,15 +153,15 @@ public class Starter extends Worker {
     List<String> transformationNames = l(a("transformation", "identity"));
     List<String> solverNames = l(a("solver", "numGA;nPop=16;nEval=100"));
     List<String> mapperNames = l(a("mapper", "brainPhaseVals;f=0.5"));
-    String lastFileName = a("lastFile", null);
-    String bestFileName = a("bestFile", null);
-    String allFileName = a("allFile", null);
+    String lastFileName = a("lastFile", "best.txt");
+    String bestFileName = a("bestFile", "last.txt");
+    String allFileName = a("allFile", "all.txt");
     String finalFileName = a("finalFile", null);
     String validationFileName = a("validationFile", null);
     boolean deferred = a("deferred", "true").startsWith("t");
     String telegramBotId = a("telegramBotId", null);
     long telegramChatId = Long.parseLong(a("telegramChatId", "0"));
-    List<String> serializationFlags = l(a("serialization", "")); //last,best,all,final
+    List<String> serializationFlags = l(a("serialization", "best,last")); //last,best,all,final
     boolean output = a("output", "false").startsWith("t");
     boolean detailedOutput = a("detailedOutput", "false").startsWith("t");
     boolean cacheOutcome = a("cache", "false").startsWith("t");
