@@ -50,40 +50,19 @@ public class NeuralReward implements NamedProvider<PrototypedFunctionBuilder<Lis
         double innerLayerRatio = Double.parseDouble(params.getOrDefault("r", "0.65"));
         int nOfInnerLayers = Integer.parseInt(params.getOrDefault("nIL", "1"));
         return new PrototypedFunctionBuilder<>() {
-            int nOfInputs = inputDimension;
-            int[] innerNeurons = innerNeurons(nOfInputs, innerLayerRatio, nOfInnerLayers).clone();
 
             @Override
             public Function<List<Double>, SerializableFunction<double[], Double>> buildFor(SerializableFunction<double[], Double> function) {
-                return values -> value -> new MultiLayerPerceptron(
-                        activationFunction,
-                        nOfInputs,
-                        innerNeurons,
-                        1,
-                        values.stream().mapToDouble(d -> d).toArray()
-                ).apply(value)[0];
-                /*new SerializableFunction<>() {
-                    @JsonProperty
-                    private final int nOfInputs = inputDimension;
-                    @JsonProperty
-                    private final int[] innerNeurons = innerNeurons(nOfInputs, innerLayerRatio, nOfInnerLayers).clone();
-                    @JsonProperty
-                    private final int nOfWeights = MultiLayerPerceptron.countWeights(nOfInputs, innerNeurons, 1);
-
-                    @JsonProperty
-                    private final MultiLayerPerceptron mlp = new MultiLayerPerceptron(
+                return values -> {
+                    MultiLayerPerceptron multiLayerPerceptron = new MultiLayerPerceptron(
                             activationFunction,
-                            nOfInputs,
-                            innerNeurons,
+                            inputDimension,
+                            innerNeurons(inputDimension, innerLayerRatio, nOfInnerLayers).clone(),
                             1,
                             values.stream().mapToDouble(d -> d).toArray()
                     );
-
-                    @Override
-                    public Double apply(double[] value) {
-                        return mlp.apply(value)[0];
-
-                };}*/
+                    return value -> multiLayerPerceptron.apply(value)[0];
+                };
             }
 
             @Override

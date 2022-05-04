@@ -137,11 +137,7 @@ public class NamedFunctions {
         if (!flag) {
             return List.of();
         }
-        return List.of(f("serialized", r -> {
-            System.out.println("HI");
-            System.out.println(r.getClass().getSimpleName());
-            return SerializationUtils.serialize(r, SerializationUtils.Mode.GZIPPED_JSON);
-        }).of(
+        return List.of(f("serialized", r -> SerializationUtils.serialize(r, SerializationUtils.Mode.GZIPPED_JSON)).of(
                 solution()));
     }
 

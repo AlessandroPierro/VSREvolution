@@ -115,8 +115,8 @@ public class Starter extends Worker {
         String bestFileName = a("bestFile", "best");
         String allFileName = a("allFile", null);
         String finalFileName = a("finalFile", "final");
-        String telegramBotId = a("telegramBotId", "5277744567:AAHnMwkTe67sVvz9aP7S0JKNGJip-ZBVPgs");
-        long telegramChatId = Long.parseLong(a("telegramChatId", "1882376186"));
+        String telegramBotId = a("telegramBotId", "0");
+        long telegramChatId = Long.parseLong(a("telegramChatId", "0"));
         List<String> serializationFlags = l(a("serialization", "last,final")); //last,best,all,final
         boolean output = a("output", "false").startsWith("t");
 
