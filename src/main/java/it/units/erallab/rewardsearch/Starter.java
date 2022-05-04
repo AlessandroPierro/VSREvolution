@@ -31,6 +31,7 @@ import it.units.erallab.hmsrobots.core.controllers.rl.discrete.DiscreteRL;
 import it.units.erallab.hmsrobots.core.controllers.rl.discrete.TabularSARSALambda;
 import it.units.erallab.hmsrobots.core.controllers.rl.discrete.converters.BinaryInputConverter;
 import it.units.erallab.hmsrobots.core.controllers.rl.discrete.converters.BinaryOutputConverter;
+import it.units.erallab.hmsrobots.core.geometry.Point2;
 import it.units.erallab.hmsrobots.core.objects.Robot;
 import it.units.erallab.hmsrobots.core.objects.Voxel;
 import it.units.erallab.hmsrobots.tasks.rllocomotion.RLEnsembleOutcome;
@@ -58,16 +59,17 @@ import java.util.random.RandomGenerator;
 import static it.units.erallab.hmsrobots.behavior.PoseUtils.computeCardinalPoses;
 import static it.units.erallab.rewardsearch.NamedFunctions.*;
 import static it.units.malelab.jgea.core.listener.NamedFunctions.fitness;
-import static it.units.malelab.jgea.core.util.Args.*;
+import static it.units.malelab.jgea.core.util.Args.d;
+import static it.units.malelab.jgea.core.util.Args.l;
 
 /**
  * @author eric
  */
 public class Starter extends Worker {
     public final static Settings PHYSICS_SETTINGS = new Settings();
-    public final static double MAX_LEARNING_TIME = 10d;
+    public final static double MAX_LEARNING_TIME = 2500d;
     public final static double MAX_EPISODE_TIME = 50d;
-    public final static int N_AGENTS = 5;
+    public final static int N_AGENTS = 3;
 
     public Starter(String[] args) {
         super(args);
@@ -102,9 +104,6 @@ public class Starter extends Worker {
         boolean areaAgent = true;
         boolean touchAgent = false;
         boolean rotationAgent = true;
-        boolean areaReward = true;
-        boolean touchReward = false;
-        boolean rotationReward = false;
         double controllerStep = 0.5;
         int nClusters = 4;
 
@@ -217,7 +216,14 @@ public class Starter extends Worker {
         Set<Set<Grid.Key>> clustersSet = computeCardinalPoses(Grid.create(body, Objects::nonNull));
         List<List<Grid.Key>> clusters = clustersSet.stream().map(s -> s.stream().toList()).toList();
 
-        ClusteredObservationFunction sensorExtractor = new ClusteredObservationFunction(clusters, areaReward, touchReward, rotationReward);
+        SerializableBiFunction<Double, Grid<Voxel>, double[]> sensorExtractor = new SerializableBiFunction<>() {
+            @Override
+            public double[] apply(Double aDouble, Grid<Voxel> entries) {
+                double sum = entries.values().stream().filter(Objects::nonNull).map(Voxel::getLinearVelocity).map(Point2::x).reduce(0d, Double::sum);
+                int nVoxels = (int) entries.values().stream().filter(Objects::nonNull).count();
+                return new double[]{sum / nVoxels};
+            }
+        };
         ClusteredObservationFunction observationFunction = new ClusteredObservationFunction(clusters, areaAgent, touchAgent, rotationAgent);
         ClusteredControlFunction controlFunction = new ClusteredControlFunction(clusters);
 
@@ -252,9 +258,9 @@ public class Starter extends Worker {
         Robot robot = new Robot(stepController, SerializationUtils.clone(body));
 
         Map<String, String> params = new HashMap<>();
-        params.put("nPop", "4");
-        params.put("nEval", "12");
-        NeuralReward neuralReward = new NeuralReward(MultiLayerPerceptron.ActivationFunction.TANH, sensorExtractor, sensorExtractor.getOutputDimension());
+        params.put("nPop", "72");
+        params.put("nEval", "2000");
+        NeuralReward neuralReward = new NeuralReward(MultiLayerPerceptron.ActivationFunction.TANH, 1);
         PrototypedFunctionBuilder<List<Double>, SerializableFunction<double[], Double>> protFunBuilder = neuralReward.build(params);
 
         SerializableFunction<double[], Double> targetFun = new SerializableFunction<>() {

@@ -1,12 +1,8 @@
 package it.units.erallab.builder.function;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import it.units.erallab.builder.NamedProvider;
 import it.units.erallab.builder.PrototypedFunctionBuilder;
 import it.units.erallab.hmsrobots.core.controllers.MultiLayerPerceptron;
-import it.units.erallab.hmsrobots.core.objects.Voxel;
-import it.units.erallab.hmsrobots.util.Grid;
-import it.units.erallab.hmsrobots.util.SerializableBiFunction;
 import it.units.erallab.hmsrobots.util.SerializableFunction;
 
 import java.util.Collections;
@@ -20,12 +16,10 @@ import java.util.function.Function;
 public class NeuralReward implements NamedProvider<PrototypedFunctionBuilder<List<Double>, SerializableFunction<double[], Double>>> {
 
     protected final MultiLayerPerceptron.ActivationFunction activationFunction;
-    protected final SerializableBiFunction<Double, Grid<Voxel>, double[]> sensorExtractor;
     protected final int inputDimension;
 
-    public NeuralReward(MultiLayerPerceptron.ActivationFunction activationFunction, SerializableBiFunction<Double, Grid<Voxel>, double[]> sensorExtractor, int inputDimension) {
+    public NeuralReward(MultiLayerPerceptron.ActivationFunction activationFunction, int inputDimension) {
         this.activationFunction = activationFunction;
-        this.sensorExtractor = sensorExtractor;
         this.inputDimension = inputDimension;
     }
 
